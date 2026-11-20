@@ -1,0 +1,1753 @@
+"use client";
+
+import { useState, useEffect, useRef, useMemo } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
+import { useAuth } from "@/context/AuthContext";
+import toast from "react-hot-toast";
+import { 
+  CheckCircle2, 
+  Leaf, 
+  ShieldCheck, 
+  ShoppingBag, 
+  Star, 
+  Zap, 
+  Plus, 
+  Minus, 
+  Heart, 
+  ChevronLeft, 
+  ChevronRight, 
+  Camera, 
+  Trash2, 
+  Sparkles, 
+  Copy,
+  Eye,
+  Flame,
+  Activity,
+  Home,
+  Share2
+} from "lucide-react";
+import { FaWhatsapp, FaFacebookF } from "react-icons/fa";
+import { motion, AnimatePresence } from "framer-motion";
+import ProductCard from "@/components/product/ProductCard";
+import Modal from "@/components/ui/Modal";
+import Input from "@/components/ui/Input";
+import { uploadMediaFile } from "@/lib/client-upload";
+
+const ProductStructuredData = ({ product }) => {
+  const productSchema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": product.name,
+    "description": product.description,
+    "image": product.images,
+    "brand": {
+      "@type": "Brand",
+      "name": "Floramade"
+    },
+    "offers": {
+      "@type": "Offer",
+      "url": `https://floramade.in/product/${product.slug}`,
+      "priceCurrency": "INR",
+      "price": product.discountPrice || product.price,
+      "priceValidUntil": new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      "availability": product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      "seller": {
+        "@type": "Organization",
+        "name": "Floramade"
+      }
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": product.rating || 5,
+      "reviewCount": product.reviewsCount || 0
+    },
+    "review": product.reviews?.map(review => ({
+      "@type": "Review",
+      "author": {
+        "@type": "Person",
+        "name": review.name
+      },
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": review.rating || 5
+      },
+      "reviewBody": review.comment
+    })) || []
+  };
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+    />
+  );
+};
+
+function FormattedDescription({ text }) {
+  if (!text) return null;
+
+  // Split into structured blocks by double newlines or multiple newlines
+  const blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+
+  return (
+    <div className="space-y-4 text-xs sm:text-sm text-[#1A2332]/90 leading-relaxed pt-2">
+      {blocks.map((block, bIdx) => {
+        // 1. Highlight top title/headline line
+        if (bIdx === 0 && (block.toLowerCase().includes("floramade") || block.toLowerCase().includes("kit") || block.length < 90)) {
+          return (
+            <div key={bIdx} className="p-3.5 rounded-xl bg-[#142B49]/5 border-l-4 border-[#142B49]">
+              <p className="font-bold text-xs sm:text-sm text-[#142B49] leading-snug">
+                {block}
+              </p>
+            </div>
+          );
+        }
+
+        // 2. Section Heading block (e.g. "Suitable For:", "Key Benefits:", or ending with ":")
+        const isHeaderOnly = block.endsWith(":") || /^(suitable for|key benefits|how it works|why choose floramade|clinical advantages|highlights):?$/i.test(block);
+        if (isHeaderOnly) {
+          const title = block.replace(/:$/, "");
+          return (
+            <div key={bIdx} className="pt-2 pb-1 border-b border-[#C5D5E8]/70">
+              <h4 className="font-bold text-xs sm:text-sm text-[#142B49] uppercase tracking-wide flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#D9A441] shrink-0" />
+                <span>{title}:</span>
+              </h4>
+            </div>
+          );
+        }
+
+        // 3. Multi-line block with list items or steps
+        if (block.includes("\n")) {
+          const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
+          return (
+            <div key={bIdx} className="space-y-2">
+              {lines.map((line, lIdx) => {
+                const isLineHeading = line.endsWith(":") || /^(suitable for|key benefits|indications):?$/i.test(line);
+                if (isLineHeading) {
+                  return (
+                    <div key={lIdx} className="pt-2 pb-1 border-b border-[#C5D5E8]/70">
+                      <h4 className="font-bold text-xs sm:text-sm text-[#142B49] uppercase tracking-wide flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#D9A441] shrink-0" />
+                        <span>{line}</span>
+                      </h4>
+                    </div>
+                  );
+                }
+
+                // Check for Dash / Colon: "External Relief – Instantly soothes burning..."
+                const dashSplit = line.split(/–| - |:\s/);
+                const hasKeyVal = dashSplit.length >= 2 && dashSplit[0].length < 35;
+                const cleanLine = line.replace(/^[-•*]\s*/, "");
+
+                return (
+                  <div key={lIdx} className="flex items-start gap-2.5 pl-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#142B49] mt-2 shrink-0 opacity-70" />
+                    <div className="leading-relaxed text-[#1A2332]/85">
+                      {hasKeyVal ? (
+                        <>
+                          <strong className="font-bold text-[#142B49]">{dashSplit[0].trim()} – </strong>
+                          <span>{dashSplit.slice(1).join(" - ").trim()}</span>
+                        </>
+                      ) : (
+                        <span>{cleanLine}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+
+        // 4. Single line that is a key feature (e.g. "External Relief – Instantly soothes...")
+        const dashSplit = block.split(/–| - |:\s/);
+        if (dashSplit.length >= 2 && dashSplit[0].length < 35 && (
+          dashSplit[0].toLowerCase().includes("relief") || 
+          dashSplit[0].toLowerCase().includes("healing") || 
+          dashSplit[0].toLowerCase().includes("correction") ||
+          dashSplit[0].toLowerCase().includes("step")
+        )) {
+          return (
+            <div key={bIdx} className="flex items-start gap-2.5 p-3 rounded-xl bg-[#F7F9FC] border border-[#C5D5E8]/60 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-[#D9A441] mt-1.5 shrink-0" />
+              <div className="leading-relaxed text-[#1A2332]/90">
+                <strong className="font-bold text-[#142B49]">{dashSplit[0].trim()}: </strong>
+                <span>{dashSplit.slice(1).join(" - ").trim()}</span>
+              </div>
+            </div>
+          );
+        }
+
+        // 5. Standard narrative paragraph with preserved newlines
+        return (
+          <p key={bIdx} className="leading-relaxed whitespace-pre-line text-[#1A2332]/85">
+            {block}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+const ratingLabels = {
+  1: "1/5 - Poor",
+  2: "2/5 - Fair",
+  3: "3/5 - Good",
+  4: "4/5 - Very Good",
+  5: "5/5 - Excellent!",
+};
+
+export default function ProductDetails({ product, relatedProducts = [] }) {
+  const router = useRouter();
+  const { addToCart } = useCart();
+  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
+  const { user } = useAuth();
+
+  // Scroll to top on mount or product change
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [product?.slug]);
+
+  // Gallery Images
+  const productImages = useMemo(() => {
+    if (Array.isArray(product.images) && product.images.length > 0) return product.images;
+    if (Array.isArray(product.featureImages) && product.featureImages.length > 0) return product.featureImages;
+    if (product.formulaimage) return [product.formulaimage];
+    return ["/placeholder.png"];
+  }, [product]);
+
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const isPointerDownRef = useRef(false);
+  const dragStartXRef = useRef(0);
+  const currentDragXRef = useRef(0);
+
+  const handlePointerDown = (e) => {
+    if (productImages.length <= 1) return;
+    if (e.button && e.button !== 0) return;
+    if (e.target.closest("button")) return;
+    isPointerDownRef.current = true;
+    dragStartXRef.current = e.clientX;
+    currentDragXRef.current = e.clientX;
+    setIsDragging(true);
+    setDragOffset(0);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isPointerDownRef.current) return;
+    currentDragXRef.current = e.clientX;
+    const diff = e.clientX - dragStartXRef.current;
+    setDragOffset(diff);
+  };
+
+  const handlePointerUp = (e) => {
+    if (!isPointerDownRef.current) return;
+    isPointerDownRef.current = false;
+    setIsDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+
+    const diff = currentDragXRef.current - dragStartXRef.current;
+    const threshold = 40;
+    if (diff < -threshold) {
+      setActiveIdx(prev => (prev + 1) % productImages.length);
+    } else if (diff > threshold) {
+      setActiveIdx(prev => (prev - 1 + productImages.length) % productImages.length);
+    }
+    setDragOffset(0);
+  };
+
+  const handlePointerCancel = () => {
+    isPointerDownRef.current = false;
+    setIsDragging(false);
+    setDragOffset(0);
+  };
+  const [quantity, setQuantity] = useState(1);
+  const [selectedPack, setSelectedPack] = useState(null);
+  const [buyNowOpen, setBuyNowOpen] = useState(false);
+  const [buyDetails, setBuyDetails] = useState({ fullName: "", phone: "", addressLine: "", city: "", state: "", pincode: "" });
+  
+  // Accordion state
+  const [accordionOpen, setAccordionOpen] = useState({
+    description: true,
+    howToUse: false,
+    ingredients: false,
+  });
+
+  const toggleAccordion = (key) => {
+    setAccordionOpen(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // FAQ accordion state
+  const [openFaqIndex, setOpenFaqIndex] = useState(null);
+  const toggleFaq = (index) => {
+    setOpenFaqIndex(prev => prev === index ? null : index);
+  };
+
+  // Review states
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewData, setReviewData] = useState({ name: "", rating: 5, comment: "", title: "", imageFile: null });
+  const [hoverRating, setHoverRating] = useState(0);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [reviewSort, setReviewSort] = useState("recent");
+  const [reviewsList, setReviewsList] = useState(product.reviews || []);
+
+  // Packs System
+  const packs = useMemo(() => {
+    if (product.packs && product.packs.length > 0) {
+      return product.packs;
+    }
+    return [{
+      label: "1 Month Pack",
+      packCount: 1,
+      sachets: product.sachets || null,
+      price: product.discountPrice || product.price,
+      mrp: product.price,
+      mostPopular: false,
+    }];
+  }, [product]);
+
+  useEffect(() => {
+    setActiveIdx(0);
+    if (packs.length > 0) {
+      const popular = packs.find(p => p.mostPopular);
+      setSelectedPack(popular || packs[0]);
+    }
+  }, [product._id, packs]);
+
+  // 6 Benefit Badges for the Hero Grid (Supports Admin Images & Pre-defined SVGs)
+  const benefitBadges = useMemo(() => {
+    const defaultIcons = [Sparkles, Zap, Leaf, Flame, Activity, ShieldCheck];
+
+    // Priority 1: Admin configured keyBenefits array of objects { text, image }
+    if (Array.isArray(product.keyBenefits) && product.keyBenefits.length > 0) {
+      const valid = product.keyBenefits
+        .filter(b => b && (b.text || b.image))
+        .map((b, idx) => ({
+          text: (b.text || "").trim(),
+          image: b.image || null,
+          icon: defaultIcons[idx % defaultIcons.length],
+        }))
+        .filter(b => Boolean(b.text));
+
+      if (valid.length > 0) {
+        return valid.slice(0, 6);
+      }
+    }
+
+    // Priority 2: Admin configured benefits + benefitImages
+    if (Array.isArray(product.benefits) && product.benefits.length > 0) {
+      const valid = product.benefits.map((b, idx) => {
+        const text = (typeof b === "string" ? b : b?.text || "").trim();
+        const image = (Array.isArray(product.benefitImages) && product.benefitImages[idx]) || (typeof b === "object" && b?.image) || null;
+        return { text, image, icon: defaultIcons[idx % defaultIcons.length] };
+      }).filter(b => Boolean(b.text));
+
+      if (valid.length > 0) return valid.slice(0, 6);
+    }
+
+    // Category authentic defaults with crisp SVGs
+    const isDiabetes = product.category === "diabetes" || 
+      product.slug?.includes("madhu") || 
+      product.name?.toLowerCase().includes("diabetes") ||
+      product.name?.toLowerCase().includes("sugar");
+
+    const isDigestion = product.category === "digestion" ||
+      product.slug?.includes("paachan") ||
+      product.name?.toLowerCase().includes("paachan") ||
+      product.name?.toLowerCase().includes("digest");
+
+    if (isDiabetes) {
+      return [
+        { text: "Balances Metabolism & Sugar", image: "/feature/5svg.svg", icon: Sparkles },
+        { text: "Enhances Insulin Sensitivity", image: "/feature/6.svg", icon: Zap },
+        { text: "Boosts Natural Immunity", image: "/feature/7.svg", icon: Leaf },
+        { text: "Improves Heart & Vitality", image: "/feature/8.svg", icon: Flame },
+        { text: "Boosts Daily Energy", image: "/feature/1.svg", icon: Activity },
+        { text: "Supports Pancreas Health", image: "/feature/2.svg", icon: ShieldCheck },
+      ];
+    }
+
+    if (isDigestion) {
+      return [
+        { text: "Relieves Acidity & Gas", image: "/feature/1.svg", icon: Sparkles },
+        { text: "Boosts Digestive Fire", image: "/feature/2.svg", icon: Zap },
+        { text: "Smooth Bowel Movement", image: "/feature/3.svg", icon: Leaf },
+        { text: "Eases Stomach Heaviness", image: "/feature/4.svg", icon: Flame },
+        { text: "Improves Gut Health", image: "/feature/7.svg", icon: Activity },
+        { text: "Detoxifies Gut System", image: "/feature/6.svg", icon: ShieldCheck },
+      ];
+    }
+
+    return [
+      { text: "Reduces Stress & Fatigue", image: "/feature/3.svg", icon: Sparkles },
+      { text: "Improves Daily Energy", image: "/feature/1.svg", icon: Zap },
+      { text: "Relaxes Mind & Body", image: "/feature/2.svg", icon: Leaf },
+      { text: "Enhances Natural Vitality", image: "/feature/8.svg", icon: Flame },
+      { text: "Balances Natural Doshas", image: "/feature/5svg.svg", icon: Activity },
+      { text: "Supports Immune Health", image: "/feature/7.svg", icon: ShieldCheck },
+    ];
+  }, [product]);
+
+  // Dynamic coupons managed by admin (empty by default, controlled via Admin Customizer)
+  const [coupons, setCoupons] = useState([]);
+
+  useEffect(() => {
+    function loadOffers() {
+      fetch("/api/settings?t=" + Date.now())
+        .then(res => res.json())
+        .then(data => {
+          if (data?.showOffersSection === false) {
+            setCoupons([]);
+            return;
+          }
+          if (Array.isArray(data?.coupons)) {
+            const activeCoupons = data.coupons.filter(
+              c => c.isActive !== false && c.showOnProductPage !== false
+            );
+            setCoupons(activeCoupons);
+          } else {
+            setCoupons([]);
+          }
+        })
+        .catch(() => {});
+    }
+
+    loadOffers();
+
+    function handleSettingsUpdated(e) {
+      const detail = e?.detail;
+      if (!detail) {
+        loadOffers();
+        return;
+      }
+      if (detail.showOffersSection === false) {
+        setCoupons([]);
+      } else if (Array.isArray(detail.coupons)) {
+        const activeCoupons = detail.coupons.filter(
+          c => c.isActive !== false && c.showOnProductPage !== false
+        );
+        setCoupons(activeCoupons);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("floramade-settings-updated", handleSettingsUpdated);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("floramade-settings-updated", handleSettingsUpdated);
+      }
+    };
+  }, []);
+
+  const applyAndCopyCoupon = (coupon) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(coupon.code);
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("floramade-applied-coupon", JSON.stringify(coupon));
+    }
+    toast.success(`Coupon "${coupon.code}" applied! It will be used at checkout.`);
+  };
+
+  // Clean description without generic placeholder
+  const cleanDescription = useMemo(() => {
+    if (product.description && 
+        !["relief from discomfort", "better results", "relief from discomfort."].includes(product.description.toLowerCase().trim())) {
+      return product.description;
+    }
+    return "100% natural Ayurvedic formulation crafted with time-tested botanical herbs for holistic wellness, sustained vitality, and natural health balance.";
+  }, [product.description]);
+
+  // How to use steps from admin or fallback
+  const usageSteps = useMemo(() => {
+    if (Array.isArray(product.usage) && product.usage.length > 0) {
+      return product.usage.map((u) => String(u).trim()).filter(Boolean);
+    }
+    if (typeof product.usage === "string" && product.usage.trim()) {
+      const parts = product.usage.includes("\n")
+        ? product.usage.split("\n")
+        : product.usage.split(",");
+      return parts.map((p) => p.trim()).filter(Boolean);
+    }
+    return [];
+  }, [product.usage]);
+
+  // Multi-Product Kit System
+  const kitProductsList = useMemo(() => {
+    // 1. Explicit kitProducts array
+    if (Array.isArray(product.kitProducts) && product.kitProducts.length > 0) {
+      return product.kitProducts.map(kp => ({
+        name: kp.name || "Product Formulation",
+        quantity: kp.quantity || "",
+        description: kp.description || "",
+        usage: kp.usage || "",
+        ingredients: Array.isArray(kp.ingredients)
+          ? kp.ingredients.map(x => String(x).trim()).filter(Boolean)
+          : (kp.ingredients || "").split(/[,•|]/).map(x => x.trim()).filter(Boolean)
+      })).filter(kp => Boolean(kp.name));
+    }
+
+    // 2. Fallback parser for legacy format "Product Name: Herb 1, Herb 2..."
+    if (Array.isArray(product.ingredients) && product.ingredients.some(i => typeof i === "string" && i.includes(":"))) {
+      return product.ingredients.map(ing => {
+        if (typeof ing !== "string") return null;
+        const colonIdx = ing.indexOf(":");
+        if (colonIdx === -1) return null;
+        const rawName = ing.slice(0, colonIdx).trim();
+        const herbsRaw = ing.slice(colonIdx + 1).trim();
+        const parenMatch = rawName.match(/^(.*?)\s*\((.*?)\)$/);
+        const name = parenMatch ? parenMatch[1].trim() : rawName;
+        const quantity = parenMatch ? parenMatch[2].trim() : "";
+        const ingredients = herbsRaw.split(/[,•|]|\s{2,}/).map(x => x.trim()).filter(Boolean);
+        return {
+          name,
+          quantity,
+          description: "",
+          usage: "",
+          ingredients: ingredients.length > 0 ? ingredients : [herbsRaw]
+        };
+      }).filter(Boolean);
+    }
+
+    return [];
+  }, [product]);
+
+  const hasKitProducts = Boolean(product.isKit || kitProductsList.length > 0);
+
+  // Pricing
+  const currentPrice = selectedPack?.price || product.discountPrice || product.price;
+  const currentMRP = selectedPack?.mrp || product.price;
+  const savings = currentMRP > currentPrice ? currentMRP - currentPrice : 0;
+
+  // Reviews Stats
+  const totalReviews = (reviewsList && reviewsList.length > 0) ? reviewsList.length : (product.reviewsCount || 0);
+  const ratingDistribution = useMemo(() => {
+    const dist = [0, 0, 0, 0, 0];
+    (reviewsList || []).forEach(r => {
+      const rating = Math.min(5, Math.max(1, r.rating || 5));
+      dist[rating - 1]++;
+    });
+    return dist.reverse();
+  }, [reviewsList]);
+
+  const sortedReviews = useMemo(() => {
+    const reviews = [...(reviewsList || [])];
+    if (reviewSort === "recent") {
+      return reviews.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    }
+    if (reviewSort === "highest") {
+      return reviews.sort((a, b) => (b.rating || 5) - (a.rating || 5));
+    }
+    if (reviewSort === "lowest") {
+      return reviews.sort((a, b) => (a.rating || 5) - (b.rating || 5));
+    }
+    return reviews;
+  }, [reviewsList, reviewSort]);
+
+  // Handlers
+  const handleAddToCart = () => {
+    const cartItem = {
+      ...product,
+      selectedPack,
+      price: currentMRP,
+      discountPrice: currentPrice,
+    };
+    for (let i = 0; i < quantity; i++) {
+      addToCart(cartItem);
+    }
+    toast.success(`Added ${quantity} ${quantity > 1 ? "items" : "item"} to Bag`);
+  };
+
+  const handleWishlist = () => {
+    if (isInWishlist(product._id)) {
+      removeFromWishlist(product._id);
+      toast.success("Removed from wishlist");
+    } else {
+      addToWishlist(product);
+      toast.success("Added to wishlist");
+    }
+  };
+
+  const copyCoupon = (code) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(code);
+      toast.success(`Coupon ${code} copied to clipboard!`);
+    }
+  };
+
+  const shareProduct = (platform) => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    const title = product.name;
+    if (platform === "facebook") {
+      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank");
+    } else if (platform === "whatsapp") {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`${title} - ${url}`)}`, "_blank");
+    } else {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        navigator.clipboard.writeText(url);
+        toast.success("Product link copied to clipboard!");
+      }
+    }
+  };
+
+  const buyNow = () => {
+    if (Object.values(buyDetails).some((value) => !String(value).trim())) {
+      return toast.error("Please add your name, phone and address before continuing.");
+    }
+    const buyNowItem = [{
+      productId: product._id,
+      name: product.name,
+      quantity,
+      price: currentPrice,
+      image: product.images?.[0],
+      slug: product.slug,
+      selectedPack,
+    }];
+    localStorage.setItem("floramade-buy-now-items", JSON.stringify(buyNowItem));
+    localStorage.setItem("floramade-buy-now-address", JSON.stringify(buyDetails));
+    setBuyNowOpen(false);
+    router.push("/checkout");
+  };
+
+  const handleImageSelect = (file) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image size should be less than 5MB");
+      return;
+    }
+    setReviewData((prev) => ({ ...prev, imageFile: file }));
+    const url = URL.createObjectURL(file);
+    setImagePreview(url);
+  };
+
+  const handleRemoveImage = () => {
+    setReviewData((prev) => ({ ...prev, imageFile: null }));
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+      setImagePreview(null);
+    }
+  };
+
+  async function handleImageUpload(file) {
+    if (!file) return null;
+    try {
+      const url = await uploadMediaFile(file, { type: "image", maxWidth: 1600 });
+      return url;
+    } catch (err) {
+      toast.error(err.message || "Image upload failed");
+      return null;
+    }
+  }
+
+  async function handleSubmitReview() {
+    if (!reviewData.name || !reviewData.comment) {
+      return toast.error("Please fill in all fields");
+    }
+
+    setUploading(true);
+    let imageUrl = "";
+    if (reviewData.imageFile) {
+      imageUrl = await handleImageUpload(reviewData.imageFile);
+      if (!imageUrl) {
+        setUploading(false);
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: product._id,
+          rating: reviewData.rating,
+          comment: reviewData.comment,
+          name: reviewData.name,
+          title: reviewData.title,
+          image: imageUrl,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to submit review");
+      const savedReview = await response.json();
+      setReviewsList(prev => [savedReview, ...prev]);
+      toast.success("Review submitted for verification!");
+      setReviewOpen(false);
+      setReviewData({ name: "", rating: 5, comment: "", title: "", imageFile: null });
+      setImagePreview(null);
+    } catch (error) {
+      toast.error(error.message || "Failed to submit review");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="w-full bg-[#F7F9FC] text-[#1A2332] pt-4 sm:pt-6 pb-12 sm:pb-16 font-sans">
+      <ProductStructuredData product={product} />
+
+      {/* TOP CONTAINER & BREADCRUMBS BAR */}
+      <div className="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-12 mb-4 sm:mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#1A2332]/70 py-2.5 border-b border-[#C5D5E8]">
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <Link href="/" className="hover:text-[#142B49] transition-colors flex items-center gap-1">
+              <Home size={13} />
+              <span>Home</span>
+            </Link>
+            <span>›</span>
+            <Link href="/collection" className="hover:text-[#142B49] transition-colors">
+              <span>Products</span>
+            </Link>
+            <span>›</span>
+            <span className="text-[#1A2332] font-bold truncate max-w-[200px] sm:max-w-md">{product.name}</span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] font-semibold text-[#1A2332]/60 flex items-center gap-1">
+              <Share2 size={12} /> Share:
+            </span>
+            <button 
+              type="button" 
+              onClick={() => shareProduct("facebook")} 
+              className="w-6 h-6 rounded-full bg-[#F7F9FC] border border-[#C5D5E8] hover:bg-[#142B49] hover:text-white flex items-center justify-center transition-all text-[#1A2332] text-[10px]"
+              title="Share on Facebook"
+            >
+              <FaFacebookF size={10} />
+            </button>
+            <button 
+              type="button" 
+              onClick={() => shareProduct("whatsapp")} 
+              className="w-6 h-6 rounded-full bg-[#F7F9FC] border border-[#C5D5E8] hover:bg-[#25D366] hover:text-white flex items-center justify-center transition-all text-[#1A2332] text-[10px]"
+              title="Share on WhatsApp"
+            >
+              <FaWhatsapp size={11} />
+            </button>
+            <button 
+              type="button" 
+              onClick={() => shareProduct("copy")} 
+              className="w-6 h-6 rounded-full bg-[#F7F9FC] border border-[#C5D5E8] hover:bg-[#142B49] hover:text-white flex items-center justify-center transition-all text-[#1A2332] text-[10px]"
+              title="Copy Link"
+            >
+              <Copy size={11} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PRODUCT HERO SECTION (2 COLUMNS: STICKY IMAGE ON PC) */}
+      <section className="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-12 mb-14 sm:mb-20">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-start">
+          
+          {/* =========================================================================
+              LEFT COLUMN: Sticky on PC so it does NOT scroll away while browsing details
+              ========================================================================= */}
+          <div className="lg:col-span-6 lg:sticky lg:top-[96px] lg:self-start space-y-4">
+            {/* Main Stage Image (Smooth Drag & Slide Carousel) */}
+            <div 
+              className={`relative aspect-square w-full rounded-3xl bg-white border border-[#C5D5E8] overflow-hidden flex items-center justify-center shadow-xs select-none group touch-pan-y ${
+                productImages.length > 1 ? "cursor-grab active:cursor-grabbing" : ""
+              }`}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
+            >
+              {/* Top-Right Wishlist Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleWishlist();
+                }}
+                className="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white border border-[#C5D5E8] text-[#1A2332]/60 hover:text-[#142B49] flex items-center justify-center transition-all shadow-xs hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-xs"
+                aria-label="Save to Wishlist"
+              >
+                <Heart 
+                  size={16} 
+                  className={isInWishlist(product._id) ? "fill-[#D9A441] text-[#142B49]" : "text-[#1A2332]/60"} 
+                />
+              </button>
+
+              {/* Slider Track with Smooth Slide Animation */}
+              <div 
+                className="flex w-full h-full will-change-transform"
+                style={{
+                  transform: `translateX(calc(-${activeIdx * 100}% + ${dragOffset}px))`,
+                  transition: isDragging ? "none" : "transform 400ms cubic-bezier(0.16, 1, 0.3, 1)",
+                }}
+              >
+                {productImages.map((img, idx) => (
+                  <div key={idx} className="relative w-full h-full flex-shrink-0 select-none">
+                    <Image
+                      src={img || "/placeholder.png"}
+                      alt={`${product.name} ${idx + 1}`}
+                      fill
+                      priority={idx === 0}
+                      sizes="(max-width: 1024px) 100vw, 50vw"
+                      quality={85}
+                      draggable={false}
+                      className="object-cover select-none pointer-events-none"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Left/Right Arrows */}
+              {productImages.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveIdx(prev => (prev - 1 + productImages.length) % productImages.length);
+                    }}
+                    aria-label="Previous Image"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F7F9FC]/95 hover:bg-[#142B49] text-[#1A2332] hover:text-white border border-[#C5D5E8] shadow-md flex items-center justify-center transition-all opacity-80 group-hover:opacity-100 hover:scale-105 active:scale-95 cursor-pointer"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveIdx(prev => (prev + 1) % productImages.length);
+                    }}
+                    aria-label="Next Image"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F7F9FC]/95 hover:bg-[#142B49] text-[#1A2332] hover:text-white border border-[#C5D5E8] shadow-md flex items-center justify-center transition-all opacity-80 group-hover:opacity-100 hover:scale-105 active:scale-95 cursor-pointer"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Thumbnails Row */}
+            {productImages.length > 1 && (
+              <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar justify-start sm:justify-center">
+                {productImages.map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveIdx(idx)}
+                    aria-label={`View thumbnail ${idx + 1}`}
+                    className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 bg-white flex-shrink-0 transition-all ${
+                      activeIdx === idx
+                        ? "border-[#142B49] shadow-sm scale-105"
+                        : "border-[#C5D5E8] opacity-75 hover:opacity-100 hover:border-[#142B49]/50"
+                    }`}
+                  >
+                    <Image
+                      src={img}
+                      alt={`Thumbnail ${idx + 1}`}
+                      fill
+                      sizes="80px"
+                      quality={75}
+                      className="object-cover select-none"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* =========================================================================
+              RIGHT COLUMN: Details, Badges, Pricing, Accordions (Unified warm theme, NO white blocks)
+              ========================================================================= */}
+          <div className="lg:col-span-6 space-y-4 sm:space-y-5">
+            
+            {/* Title & Category Tag */}
+            <div>
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <span className="text-[10px] font-bold text-[#142B49] uppercase tracking-tight bg-[#E7EFD8] px-2.5 py-0.5 rounded-full border border-[#C5D5E8]">
+                  🌿 {product.category || "Ayurvedic Formulation"}
+                </span>
+                {hasKitProducts && (
+                  <span className="text-[10px] font-bold text-[#142B49] uppercase tracking-tight bg-[#D9A441]/20 px-2.5 py-0.5 rounded-full border border-[#D9A441]/40 flex items-center gap-1">
+                    📦 Complete {kitProductsList.length > 0 ? `${kitProductsList.length}-Product ` : ""}Kit
+                  </span>
+                )}
+                <span className="text-[10px] font-semibold text-[#1A2332]/60 uppercase tracking-tight">
+                  100% Organic &amp; Lab-Tested
+                </span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-[34px] font-bold text-[#1A2332] tracking-tight leading-tight">
+                {product.name}
+              </h1>
+            </div>
+
+            {/* Rating Bar (Clean & Authentic, only shown when reviews exist) */}
+            <div className="flex items-center gap-2 min-h-[20px]">
+              {totalReviews > 0 ? (
+                <>
+                  <div className="flex text-[#D9A441]">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star
+                        key={i}
+                        size={14}
+                        className={i < Math.round(product.rating || 5) ? "fill-[#D9A441] text-[#D9A441]" : "text-[#C5D5E8]"}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs sm:text-sm font-bold text-[#1A2332] tracking-tight whitespace-nowrap">
+                    {Number(product.rating || 5).toFixed(1)} ({totalReviews} {totalReviews === 1 ? "rating" : "ratings"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs text-[#1A2332]/50 tracking-tight">
+                  No reviews yet
+                </span>
+              )}
+            </div>
+
+            {/* KEY BENEFIT BADGES GRID (Prominent crisp icons, admin image support, compact elegant layout) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 pt-1 max-w-[480px]">
+              {benefitBadges.map((badge, idx) => {
+                const IconComp = badge.icon;
+                return (
+                  <div
+                    key={idx}
+                    className="p-2.5 sm:p-3 rounded-2xl bg-[#F7F9FC] border border-[#C5D5E8] shadow-xs flex flex-col items-center text-center justify-center gap-2 hover:border-[#142B49]/50 transition-colors"
+                  >
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#F7F9FC] border border-[#C5D5E8] text-[#D9A441] flex items-center justify-center shrink-0 p-1.5 overflow-hidden shadow-xs">
+                      {badge.image ? (
+                        <img 
+                          src={badge.image} 
+                          alt={badge.text} 
+                          className="w-full h-full object-contain transition-transform duration-300 hover:scale-105" 
+                        />
+                      ) : (
+                        <IconComp size={24} className="text-[#D9A441]" />
+                      )}
+                    </div>
+                    <span className="text-[10.5px] sm:text-[11px] font-semibold text-[#1A2332] leading-tight tracking-tight line-clamp-2">
+                      {badge.text}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* PRICE & STOCK STATUS */}
+            <div className="space-y-1 pt-1">
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl sm:text-4xl font-bold tracking-tight text-[#1A2332]">
+                  ₹{currentPrice.toLocaleString("en-IN")}
+                </span>
+                {currentMRP > currentPrice && (
+                  <span className="text-base sm:text-lg text-[#1A2332]/40 line-through">
+                    ₹{currentMRP.toLocaleString("en-IN")}
+                  </span>
+                )}
+                {savings > 0 && (
+                  <span className="text-xs font-bold text-[#D9A441] bg-[#D9A441]/10 px-2.5 py-0.5 rounded-full uppercase tracking-tight">
+                    Save ₹{savings.toLocaleString("en-IN")}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs font-semibold text-[#2E6930] flex items-center gap-1.5 tracking-tight">
+                <span className="w-2 h-2 rounded-full bg-[#2E6930] animate-pulse" />
+                <span>In Stock | Incl. All Taxes</span>
+              </div>
+            </div>
+
+            {/* PACK SELECTION (if multiple packs configured) */}
+            {packs.length > 1 && (
+              <div className="space-y-2 pt-1">
+                <label className="block text-xs font-bold text-[#1A2332] uppercase tracking-tight">Select Pack</label>
+                <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(packs.length, 3)}, 1fr)` }}>
+                  {packs.map((pack, idx) => {
+                    const isSelected = selectedPack === pack;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedPack(pack)}
+                        className={`p-3 rounded-2xl border-2 text-left transition-all ${
+                          isSelected
+                            ? "border-[#142B49] bg-[#F7F9FC] ring-2 ring-[#142B49]/15 shadow-xs"
+                            : "border-[#C5D5E8] bg-[#F7F9FC] hover:border-[#142B49]/40"
+                        }`}
+                      >
+                        <span className="block text-xs font-bold text-[#1A2332] tracking-tight">{pack.label}</span>
+                        <span className="block text-sm font-bold text-[#142B49] mt-0.5">₹{pack.price}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* QUANTITY SELECTOR */}
+            <div className="flex items-center gap-4 pt-1">
+              <span className="text-xs font-bold text-[#1A2332] uppercase tracking-tight">Quantity</span>
+              <div className="flex items-center border border-[#C5D5E8] rounded-xl bg-[#F7F9FC]">
+                <button
+                  type="button"
+                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                  className="w-9 h-9 flex items-center justify-center text-[#1A2332] hover:bg-[#F7F9FC] rounded-l-xl transition-colors active:scale-90"
+                  aria-label="Decrease quantity"
+                >
+                  <Minus size={14} />
+                </button>
+                <span className="w-10 text-center text-sm font-bold text-[#1A2332]">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity(q => q + 1)}
+                  className="w-9 h-9 flex items-center justify-center text-[#1A2332] hover:bg-[#F7F9FC] rounded-r-xl transition-colors active:scale-90"
+                  aria-label="Increase quantity"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* ACTION BUTTONS: Add to Bag & Buy Now */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleAddToCart}
+                className="h-12 sm:h-13 rounded-xl bg-[#142B49] text-white flex items-center justify-center gap-2 hover:bg-[#0E1F36] transition-all active:scale-[0.98] font-bold text-xs sm:text-sm uppercase tracking-tight shadow-sm hover:shadow-md cursor-pointer"
+              >
+                <ShoppingBag size={17} />
+                <span>Add to Bag</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const buyNowItem = [{
+                    productId: product._id,
+                    name: product.name,
+                    quantity,
+                    price: currentPrice,
+                    image: product.images?.[0] || productImages[0],
+                    slug: product.slug,
+                    selectedPack,
+                  }];
+                  localStorage.setItem("floramade-buy-now-items", JSON.stringify(buyNowItem));
+                  if (!user) {
+                    toast("Please sign in to complete your purchase");
+                    router.push("/login?redirect=/checkout");
+                    return;
+                  }
+                  setBuyNowOpen(true);
+                }}
+                className="h-12 sm:h-13 rounded-xl bg-[#D9A441] text-white flex items-center justify-center gap-2 hover:bg-[#C48F2E] transition-all active:scale-[0.98] font-bold text-xs sm:text-sm uppercase tracking-tight shadow-md shadow-[#D9A441]/25 cursor-pointer"
+              >
+                <Zap size={17} fill="currentColor" />
+                <span>Buy It Now</span>
+              </button>
+            </div>
+
+            {/* OFFERS FOR YOU (Admin Managed Live Coupons) */}
+            {coupons.length > 0 && (
+              <div className="space-y-2.5 pt-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs sm:text-sm font-bold text-[#1A2332] uppercase tracking-tight">Offers for You</h3>
+                  <span className="text-[10px] text-[#142B49] font-semibold">Click to apply coupon</span>
+                </div>
+                
+                <div className="space-y-2">
+                  {coupons.map((coupon, idx) => (
+                    <div 
+                      key={coupon.id || idx}
+                      onClick={() => applyAndCopyCoupon(coupon)}
+                      className="p-3 sm:p-3.5 rounded-2xl bg-[#F7F9FC] border border-[#C5D5E8] hover:border-[#142B49]/50 flex items-center justify-between gap-3 shadow-xs cursor-pointer transition-all hover:scale-[1.01]"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          {coupon.badge && (
+                            <span className="text-[10px] font-bold text-white bg-[#142B49] px-2 py-0.5 rounded-md uppercase tracking-tight">
+                              {coupon.badge}
+                            </span>
+                          )}
+                          <span className="text-xs sm:text-sm font-bold text-[#1A2332] tracking-tight">
+                            {coupon.title || coupon.code}
+                          </span>
+                        </div>
+                        <p className="text-[11px] sm:text-xs text-[#1A2332]/75 tracking-tight">
+                          {coupon.description || `Use coupon ${coupon.code} on your order.`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          applyAndCopyCoupon(coupon);
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-[#142B49]/20 bg-[#F7F9FC] hover:bg-[#142B49] hover:text-white text-[#1A2332] text-xs font-bold tracking-tight transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        title="Copy and Apply Coupon"
+                      >
+                        <span>{coupon.code}</span>
+                        <Copy size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ACCORDIONS (Description, How to Use, Ingredients - Smooth Animated Accordions) */}
+            <div className="space-y-2.5 pt-2">
+              
+              {/* 1. Description Accordion */}
+              <div className="border border-[#C5D5E8] rounded-2xl overflow-hidden bg-white shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => toggleAccordion("description")}
+                  className="w-full flex items-center justify-between p-4 text-left font-bold text-xs sm:text-sm text-[#1A2332] hover:bg-[#C5D5E8]/30 transition-colors cursor-pointer select-none"
+                >
+                  <span>Description</span>
+                  <Plus size={16} className={`transition-transform duration-300 ease-in-out ${accordionOpen.description ? "rotate-45 text-[#142B49]" : ""}`} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {accordionOpen.description && (
+                    <motion.div
+                      key="desc-content"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-4 pb-4 pt-1 text-xs sm:text-sm text-[#1A2332]/85 leading-relaxed border-t border-[#C5D5E8]/50">
+                        <FormattedDescription text={cleanDescription} />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* 2. How to Use Accordion (Clean text ritual steps, NO IMAGES) */}
+              <div className="border border-[#C5D5E8] rounded-2xl overflow-hidden bg-white shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => toggleAccordion("howToUse")}
+                  className="w-full flex items-center justify-between p-4 text-left font-bold text-xs sm:text-sm text-[#1A2332] hover:bg-[#C5D5E8]/30 transition-colors cursor-pointer select-none"
+                >
+                  <span>How to Use</span>
+                  <Plus size={16} className={`transition-transform duration-300 ease-in-out ${accordionOpen.howToUse ? "rotate-45 text-[#142B49]" : ""}`} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {accordionOpen.howToUse && (
+                    <motion.div
+                      key="use-content"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-4 pb-4 pt-2 text-xs sm:text-sm text-[#1A2332]/85 leading-relaxed border-t border-[#C5D5E8]/50 space-y-3">
+                        <p className="font-semibold text-[#142B49] flex items-center gap-1.5">
+                          <span>🌿</span> Recommended Daily Ritual:
+                        </p>
+
+                        {hasKitProducts && kitProductsList.some(kp => kp.usage) ? (
+                          <div className="space-y-2.5">
+                            {kitProductsList.map((kp, idx) => (
+                              <div
+                                key={idx}
+                                className="rounded-xl border border-[#C5D5E8]/70 bg-[#F7F9FC] p-3 text-xs sm:text-sm text-[#1A2332]/90 leading-relaxed shadow-2xs space-y-1"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#142B49] text-[10px] font-bold text-white">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="font-bold text-xs sm:text-sm text-[#142B49]">
+                                    {kp.name} {kp.quantity ? `(${kp.quantity})` : ""}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-[#1A2332]/85 pl-7">
+                                  {kp.usage || "Use as directed on label or by your Ayurvedic physician."}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : usageSteps.length > 0 ? (
+                          <div className="space-y-2">
+                            {usageSteps.map((step, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-start gap-2.5 rounded-xl border border-[#C5D5E8]/60 bg-[#F7F9FC] p-3 text-xs sm:text-sm text-[#1A2332]/90 leading-relaxed shadow-2xs"
+                              >
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#142B49] text-[10px] font-bold text-white mt-0.5">
+                                  {idx + 1}
+                                </span>
+                                <span>{step}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <ul className="space-y-1.5 list-disc pl-4 text-xs sm:text-sm text-[#1A2332]/80">
+                            <li><strong>Dosage:</strong> Take 1 to 2 scoops or tablets daily, or as advised by your Ayurvedic physician.</li>
+                            <li><strong>Timing:</strong> Best consumed with lukewarm water or warm milk after meals (morning and evening).</li>
+                            <li><strong>Course Duration:</strong> Continue consistently for 6 to 8 weeks for sustained and best holistic results.</li>
+                          </ul>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* 3. Ingredients Accordion (Multi-Product Kit View OR Single Product List) */}
+              <div className="border border-[#C5D5E8] rounded-2xl overflow-hidden bg-white shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => toggleAccordion("ingredients")}
+                  className="w-full flex items-center justify-between p-4 text-left font-bold text-xs sm:text-sm text-[#1A2332] hover:bg-[#C5D5E8]/30 transition-colors cursor-pointer select-none"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>Ingredients</span>
+                    {hasKitProducts && kitProductsList.length > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#142B49]/10 text-[#142B49]">
+                        {kitProductsList.length} Formulations
+                      </span>
+                    )}
+                  </div>
+                  <Plus size={16} className={`transition-transform duration-300 ease-in-out ${accordionOpen.ingredients ? "rotate-45 text-[#142B49]" : ""}`} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {accordionOpen.ingredients && (
+                    <motion.div
+                      key="ing-content"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                      className="overflow-hidden"
+                    >
+                      {hasKitProducts && kitProductsList.length > 0 ? (
+                        <div className="px-4 pb-4 pt-2 text-xs sm:text-sm text-[#1A2332]/85 leading-relaxed border-t border-[#C5D5E8]/50 space-y-3.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-[#C5D5E8]/40">
+                            <p className="font-semibold text-[#142B49] flex items-center gap-1.5 text-xs sm:text-sm">
+                              <span>🌿</span> 100% Pure Botanical Ingredients by Product:
+                            </p>
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#142B49]/10 text-[#142B49]">
+                              {kitProductsList.length} Products Included
+                            </span>
+                          </div>
+
+                          <div className="space-y-3">
+                            {kitProductsList.map((kp, idx) => (
+                              <div key={idx} className="rounded-xl border border-[#C5D5E8] bg-[#F7F9FC] p-3.5 space-y-2 shadow-2xs">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-[#142B49] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <h4 className="font-bold text-xs sm:text-sm text-[#142B49]">
+                                      {kp.name}
+                                    </h4>
+                                  </div>
+                                  {kp.quantity && (
+                                    <span className="text-[11px] font-semibold text-[#142B49] bg-white px-2 py-0.5 rounded-md border border-[#C5D5E8]">
+                                      {kp.quantity}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {kp.description && (
+                                  <p className="text-[11px] text-[#1A2332]/75 italic pl-7">
+                                    {kp.description}
+                                  </p>
+                                )}
+
+                                <div className="pl-7 flex flex-wrap gap-1.5 pt-0.5">
+                                  {(kp.ingredients && kp.ingredients.length > 0 ? kp.ingredients : []).map((herb, hIdx) => (
+                                    <span
+                                      key={hIdx}
+                                      className="inline-block px-2.5 py-1 rounded-full bg-white border border-[#C5D5E8] text-[11px] sm:text-xs font-semibold text-[#1A2332] shadow-2xs"
+                                    >
+                                      {herb}
+                                    </span>
+                                  ))}
+                                </div>
+
+                                {kp.usage && (
+                                  <div className="pl-7 pt-1 text-[11px] text-[#142B49] flex items-center gap-1.5 font-medium">
+                                    <span>🕒 Dosage:</span>
+                                    <span className="text-[#1A2332]/80">{kp.usage}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          <p className="text-[11px] sm:text-xs text-[#1A2332]/65 leading-relaxed pt-1 border-t border-[#C5D5E8]/50">
+                            Ethically sourced standardized extracts. Zero added sugar, no artificial chemicals, no synthetic binders.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="px-4 pb-4 pt-2 text-xs sm:text-sm text-[#1A2332]/85 leading-relaxed border-t border-[#C5D5E8]/50 space-y-2.5">
+                          <p className="font-semibold text-[#142B49]">🌿 100% Pure Botanical Ingredients:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(product.ingredients && product.ingredients.length > 0 
+                              ? product.ingredients 
+                              : ["Ashwagandha", "Safed Musli", "Shatavari", "Gokshura", "Kaunch Beej", "Amla", "Vidarikand", "Gudmar", "Jamun", "Karela"]
+                            ).map((ing, idx) => {
+                              const name = typeof ing === "string" ? ing : ing?.name || "";
+                              return (
+                                <span 
+                                  key={idx}
+                                  className="inline-block px-2.5 py-1 rounded-full bg-[#F7F9FC] border border-[#C5D5E8] text-xs font-semibold text-[#1A2332] capitalize tracking-tight"
+                                >
+                                  {name}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[11px] sm:text-xs text-[#1A2332]/65 leading-relaxed pt-1 border-t border-[#C5D5E8]/50">
+                            Ethically sourced pure extracts. Zero added sugar, no artificial chemicals, no synthetic binders.
+                          </p>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* CERTIFIED NATURAL GOODNESS (4 Trust Badges - Identical to Why Choose Floramade, Crisp & Warm) */}
+      <section className="py-12 sm:py-16 bg-[#F7F9FC] border-t border-[#C5D5E8]/80">
+        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8 sm:mb-12">
+            <h2 className="text-2xl sm:text-3xl md:text-[34px] font-bold text-[#1A2332] tracking-tight">
+              Certified Natural Goodness For You
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-10 md:gap-14 lg:gap-16 max-w-xs sm:max-w-md md:max-w-4xl mx-auto justify-items-center items-center">
+            {[
+              { id: 1, src: "/certificate/1.svg", alt: "Quality You Can Trust - Gluten Free" },
+              { id: 2, src: "/certificate/2.svg", alt: "100% Pure, Natural & Vegan" },
+              { id: 3, src: "/certificate/3.svg", alt: "Clinically Tested Ingredients" },
+              { id: 4, src: "/certificate/4.svg", alt: "Certified Organic & GMO Free" },
+            ].map((cert) => (
+              <div
+                key={cert.id}
+                className="relative w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 transition-transform duration-300 hover:scale-105 flex items-center justify-center cursor-default"
+              >
+                <Image
+                  src={cert.src}
+                  alt={cert.alt}
+                  fill
+                  sizes="(max-width: 640px) 112px, (max-width: 768px) 128px, 160px"
+                  className="object-contain p-0 m-0"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FREQUENTLY BOUGHT TOGETHER (4 Product Cards matching reference Image 3) */}
+      {relatedProducts && relatedProducts.length > 0 && (
+        <section className="py-14 sm:py-18 bg-[#F7F9FC] border-t border-[#C5D5E8]/80">
+          <div className="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-12">
+            <div className="text-center mb-8 sm:mb-12">
+              <h2 className="text-2xl sm:text-3xl md:text-[34px] font-bold text-[#1A2332] tracking-tight">
+                Frequently Bought Together
+              </h2>
+              <p className="text-xs sm:text-sm text-[#1A2332]/70 font-normal tracking-tight mt-1.5">
+                Pair with these complementary Ayurvedic formulations for faster holistic results.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-6">
+              {relatedProducts.slice(0, 4).map((item, idx) => (
+                <div key={item._id || item.id || idx} className="h-full">
+                  <ProductCard product={item} index={idx} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* FREQUENTLY ASKED QUESTIONS (Unified warm theme, NO white bands) */}
+      <section className="py-14 sm:py-18 bg-[#F7F9FC] border-t border-[#C5D5E8]/80">
+        <div className="max-w-[840px] mx-auto px-4 sm:px-6">
+          <div className="text-center mb-8 sm:mb-10">
+            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#E7EFD8] text-[#142B49] text-[11px] font-bold uppercase tracking-tight border border-[#C5D5E8]">
+              Got Questions?
+            </span>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#1A2332] tracking-tight mt-2">
+              Frequently Asked Questions
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {(product.faqs || [
+              { question: "How do I use this product?", answer: "Follow the usage instructions provided on the packaging. Consult with an Ayurvedic practitioner for personalized guidance." },
+              { question: "Is this product suitable for daily use?", answer: "Yes, all our products are formulated for daily use following Ayurvedic principles. However, we recommend consulting with an Ayurvedic practitioner for personalized dosage guidance." },
+              { question: "Are there any side effects?", answer: "Our products are made from 100% natural ingredients and are generally safe for consumption. However, if you have any specific health conditions or are pregnant/nursing, please consult your healthcare provider before use." },
+              { question: "How long does it take to see results?", answer: "Ayurvedic remedies work holistically and results may vary from person to person. Typically, consistent use for 4-6 weeks shows noticeable improvements in overall well-being." },
+              { question: "Does this product provide long-lasting support?", answer: "Yes, with regular and consistent use, our Ayurvedic formulations are designed to provide sustained, long-lasting wellness benefits." }
+            ]).map((faq, i) => {
+              const isOpen = openFaqIndex === i;
+              return (
+                <div 
+                  key={i}
+                  className="bg-white rounded-2xl border border-[#C5D5E8] overflow-hidden shadow-xs transition-colors hover:border-[#142B49]/40"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleFaq(i)}
+                    className="w-full flex items-center gap-3 p-4 sm:p-5 cursor-pointer text-left text-xs sm:text-sm font-bold text-[#1A2332] hover:bg-[#F7F9FC]/40 transition-colors select-none"
+                  >
+                    <span className="text-[#142B49] font-bold text-xs min-w-[24px]">{String(i + 1).padStart(2, "0")}</span>
+                    <span className="flex-1">{faq.question}</span>
+                    <div className={`flex-shrink-0 w-6 h-6 rounded-full bg-[#142B49] flex items-center justify-center text-white transition-all duration-300 ease-in-out ${isOpen ? "rotate-45 bg-[#142B49]" : ""}`}>
+                      <Plus size={13} />
+                    </div>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        key={`faq-anim-${i}`}
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-5 pb-5 pl-[52px] text-[#1A2332]/80 font-normal leading-relaxed text-xs sm:text-sm border-t border-[#C5D5E8]/50 pt-2.5">
+                          {faq.answer}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* CUSTOMER REVIEWS SECTION (Unified warm theme) */}
+      <section id="reviews-section" className="py-14 sm:py-18 bg-[#F7F9FC] border-t border-[#C5D5E8]/80">
+        <div className="max-w-[900px] mx-auto px-4 sm:px-6">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#1A2332] tracking-tight">Customer Reviews</h2>
+          </div>
+
+          {/* Rating Summary Card */}
+          <div className="flex flex-col md:flex-row items-center gap-8 mb-8 p-6 sm:p-8 bg-white rounded-3xl border border-[#C5D5E8] shadow-xs">
+            <div className="flex flex-col items-center gap-1.5">
+              {totalReviews > 0 ? (
+                <>
+                  <span className="text-4xl sm:text-5xl font-bold text-[#1A2332] tracking-tight">
+                    {Number(product.rating || 5).toFixed(1)}
+                  </span>
+                  <div className="flex text-[#D9A441]">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} size={18} className={i < Math.round(product.rating || 5) ? "fill-[#D9A441] text-[#D9A441]" : "text-[#C5D5E8]"} />
+                    ))}
+                  </div>
+                  <span className="text-xs text-[#1A2332]/60 font-medium">
+                    Based on {totalReviews} {totalReviews === 1 ? "review" : "reviews"}
+                  </span>
+                </>
+              ) : (
+                <div className="text-center py-2">
+                  <span className="text-sm font-bold text-[#1A2332]">No reviews yet</span>
+                  <p className="text-xs text-[#1A2332]/60 mt-0.5">Be the first to share your experience</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 w-full space-y-2">
+              {[5, 4, 3, 2, 1].map((stars, idx) => {
+                const count = ratingDistribution[idx];
+                const pct = totalReviews > 0 ? (count / totalReviews) * 100 : (stars === 5 ? 85 : stars === 4 ? 12 : 3);
+                return (
+                  <div key={stars} className="flex items-center gap-2">
+                    <div className="flex text-amber-400 w-20">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star key={i} size={12} className={i < stars ? "fill-amber-400 text-amber-400" : "text-[#C5D5E8]"} />
+                      ))}
+                    </div>
+                    <div className="flex-1 h-2 bg-[#142B49]/10 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-[#142B49] rounded-full transition-all duration-500" 
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-[#1A2332]/60 w-6 text-right font-medium">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div>
+              <button 
+                onClick={() => setReviewOpen(true)}
+                className="px-6 py-3 bg-[#142B49] text-white rounded-xl font-bold text-xs uppercase tracking-tight hover:bg-[#0E1F36] transition-all shadow-sm whitespace-nowrap active:scale-95 cursor-pointer"
+              >
+                Write a review
+              </button>
+            </div>
+          </div>
+
+          {/* Sort Dropdown */}
+          <div className="flex items-center justify-between mb-6">
+            <span className="text-xs font-bold text-[#1A2332]/60 uppercase tracking-tight">
+              Customer Feedback
+            </span>
+            <select
+              value={reviewSort}
+              onChange={(e) => setReviewSort(e.target.value)}
+              className="text-xs sm:text-sm border border-[#C5D5E8] rounded-full px-3.5 py-1.5 bg-[#F7F9FC] text-[#1A2332] outline-none shadow-xs font-medium cursor-pointer"
+            >
+              <option value="recent">Most Recent</option>
+              <option value="highest">Highest Rating</option>
+              <option value="lowest">Lowest Rating</option>
+            </select>
+          </div>
+
+          {/* Review Cards */}
+          <div className="space-y-4">
+            {sortedReviews.map((review, i) => (
+              <div 
+                key={i}
+                className="p-5 bg-white rounded-2xl border border-[#C5D5E8] shadow-xs"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex text-amber-400">
+                    {Array.from({ length: 5 }).map((_, idx) => (
+                      <Star key={idx} size={14} className={idx < (review.rating || 5) ? "fill-amber-400 text-amber-400" : "text-[#C5D5E8]"} />
+                    ))}
+                  </div>
+                  {review.createdAt && (
+                    <span className="text-xs text-[#1A2332]/50 font-medium">
+                      {new Date(review.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-full bg-[#F7F9FC] flex items-center justify-center text-[#142B49] font-bold text-xs border border-[#C5D5E8]">
+                    {review.name?.charAt(0) || "U"}
+                  </div>
+                  <span className="text-sm font-bold text-[#1A2332] capitalize">{review.name}</span>
+                  <span className="px-2 py-0.5 bg-[#E7EFD8] text-[#142B49] border border-[#C5D5E8] text-[10px] font-bold rounded-full">
+                    ✓ Verified Buyer
+                  </span>
+                </div>
+
+                {review.title && (
+                  <h4 className="font-bold text-sm text-[#1A2332] mb-1">{review.title}</h4>
+                )}
+                <p className="text-xs sm:text-sm text-[#1A2332]/80 leading-relaxed font-normal">{review.comment}</p>
+              </div>
+            ))}
+          </div>
+
+          {sortedReviews.length === 0 && (
+            <div className="text-center py-10">
+              <p className="text-[#1A2332]/60 text-sm">No reviews yet. Be the first to review this product!</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* REVIEW MODAL */}
+      <Modal 
+        open={reviewOpen} 
+        title="Write a Review" 
+        subtitle={`Reviewing ${product.name}`}
+        onClose={() => setReviewOpen(false)}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-[#1A2332] uppercase tracking-tight">
+                Your Rating <span className="text-red-500">*</span>
+              </label>
+              <span className="text-xs font-semibold text-[#142B49]">
+                {ratingLabels[hoverRating || reviewData.rating]}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 p-3 bg-[#F7F9FC] rounded-xl border border-[#C5D5E8]">
+              {[1, 2, 3, 4, 5].map((star) => {
+                const active = (hoverRating || reviewData.rating) >= star;
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    onClick={() => setReviewData((prev) => ({ ...prev, rating: star }))}
+                    className="p-1 hover:scale-110 active:scale-95 transition-all focus:outline-none"
+                    aria-label={`Rate ${star} star`}
+                  >
+                    <Star 
+                      size={26} 
+                      fill={active ? "#F59E0B" : "none"} 
+                      className={active ? "text-amber-400" : "text-[#C5D5E8]"} 
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-[#1A2332] uppercase tracking-tight">
+                Your Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Ramesh Kumar"
+                value={reviewData.name}
+                onChange={(e) => setReviewData((prev) => ({ ...prev, name: e.target.value }))}
+                className="h-11 w-full rounded-xl border border-[#C5D5E8] bg-[#F7F9FC] px-3.5 text-sm text-[#1A2332] outline-none transition placeholder:text-[#1A2332]/35 focus:border-[#142B49]"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-[#1A2332] uppercase tracking-tight">
+                Review Title <span className="text-[#1A2332]/40 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Excellent Ayurvedic remedy!"
+                value={reviewData.title}
+                onChange={(e) => setReviewData((prev) => ({ ...prev, title: e.target.value }))}
+                className="h-11 w-full rounded-xl border border-[#C5D5E8] bg-[#F7F9FC] px-3.5 text-sm text-[#1A2332] outline-none transition placeholder:text-[#1A2332]/35 focus:border-[#142B49]"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-[#1A2332] uppercase tracking-tight">
+                Your Photo <span className="text-[#1A2332]/40 font-normal">(Optional)</span>
+              </label>
+              
+              {imagePreview ? (
+                <div className="relative flex items-center gap-3 p-3 rounded-xl bg-[#F7F9FC] border border-[#C5D5E8]">
+                  <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-[#C5D5E8]">
+                    <Image src={imagePreview} alt="Review attachment" fill className="object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-[#1A2332] truncate">
+                      {reviewData.imageFile?.name || "Photo selected"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    className="p-1.5 rounded-full text-red-500 hover:bg-red-50"
+                    title="Remove photo"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed border-[#C5D5E8] hover:border-[#142B49]/40 bg-[#F7F9FC] cursor-pointer transition-all">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleImageSelect(e.target.files?.[0])}
+                    className="hidden"
+                  />
+                  <Camera size={16} className="text-[#142B49]" />
+                  <span className="text-xs font-semibold text-[#1A2332]">Click to upload a photo (Optional)</span>
+                </label>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-[#1A2332] uppercase tracking-tight">
+                Your Review <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={reviewData.comment}
+                onChange={(e) => setReviewData((prev) => ({ ...prev, comment: e.target.value }))}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#C5D5E8] focus:outline-none focus:border-[#142B49] min-h-[100px] bg-[#F7F9FC] text-sm text-[#1A2332] placeholder:text-[#1A2332]/35 resize-none transition-all"
+                placeholder="Share your experience with this product..."
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSubmitReview}
+            disabled={uploading || !reviewData.name.trim() || !reviewData.comment.trim()}
+            className="w-full h-11 rounded-xl bg-[#142B49] text-white font-bold text-xs uppercase tracking-tight hover:bg-[#0E1F36] disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+          >
+            {uploading ? (
+              <span>Submitting Review...</span>
+            ) : (
+              <>
+                <Sparkles size={14} />
+                <span>Submit Review</span>
+              </>
+            )}
+          </button>
+        </div>
+      </Modal>
+
+      {/* BUY NOW QUICK CHECKOUT MODAL */}
+      <Modal open={buyNowOpen} title="Quick Checkout" subtitle="Complete your order details" onClose={() => setBuyNowOpen(false)}>
+        <div className="space-y-4">
+          {selectedPack && (
+            <div className="flex items-center gap-3 p-3 bg-[#F7F9FC] rounded-xl border border-[#C5D5E8]">
+              {product.images?.[0] && (
+                <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-[#C5D5E8]">
+                  <Image src={product.images[0]} alt={product.name} fill className="object-cover" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-[#1A2332] truncate">{product.name}</p>
+                <p className="text-[11px] text-[#1A2332]/60">{selectedPack.label || `Pack of ${selectedPack.packCount}`} × {quantity}</p>
+              </div>
+              <p className="text-sm font-bold text-[#1A2332]">₹{currentPrice * quantity}</p>
+            </div>
+          )}
+          
+          <div className="space-y-3">
+            <Input label="Full Name" value={buyDetails.fullName} onChange={(e) => setBuyDetails((prev) => ({ ...prev, fullName: e.target.value }))} />
+            <Input label="Phone Number" placeholder="e.g. 9220251059" value={buyDetails.phone} onChange={(e) => setBuyDetails((prev) => ({ ...prev, phone: e.target.value }))} />
+            <Input label="Street Address" value={buyDetails.addressLine} onChange={(e) => setBuyDetails((prev) => ({ ...prev, addressLine: e.target.value }))} />
+            <div className="grid gap-2.5 sm:grid-cols-3">
+              <Input label="City" value={buyDetails.city} onChange={(e) => setBuyDetails((prev) => ({ ...prev, city: e.target.value }))} />
+              <Input label="State" value={buyDetails.state} onChange={(e) => setBuyDetails((prev) => ({ ...prev, state: e.target.value }))} />
+              <Input label="Pincode" value={buyDetails.pincode} onChange={(e) => setBuyDetails((prev) => ({ ...prev, pincode: e.target.value }))} />
+            </div>
+          </div>
+
+          <button 
+            type="button"
+            onClick={buyNow}
+            className="w-full h-12 rounded-xl bg-[#D9A441] text-[#142B49] font-extrabold text-xs uppercase tracking-tight hover:bg-[#C48F2E] shadow-md shadow-[#D9A441]/20 transition-all cursor-pointer flex items-center justify-center"
+          >
+            Continue to Payment
+          </button>
+        </div>
+      </Modal>
+
+    </div>
+  );
+}

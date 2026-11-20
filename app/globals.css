@@ -1,0 +1,189 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Floramade Premium Ocean Navy & Pearl Theme */
+  --background: #F7F9FC;
+  --foreground: #1A2332;
+  --primary: #142B49;
+  --accent: #D9A441;
+  --highlight: #D9A441;
+  --muted: #EDF1F7;
+  --border: #C5D5E8;
+  --footer: #142B49;
+  --pearl-blue: #D9E5F3;
+  --soft-sage: #E7EFD8;
+  --font-dm-sans: "DM Sans", sans-serif;
+  --font-funnel: "DM Sans", sans-serif;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-dm-sans);
+  font-optical-sizing: auto;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-weight: 400;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-dm-sans);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.font-display {
+  font-family: var(--font-dm-sans);
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+}
+
+/* Awwwards Style Containers */
+.container-premium {
+  width: 100%;
+  max-width: 1440px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+@media (min-width: 1024px) {
+  .container-premium {
+    padding-left: 4rem;
+    padding-right: 4rem;
+  }
+}
+
+/* Scrollbar in theme palette */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #A8BDD5;
+}
+
+::selection {
+  background: #142B49;
+  color: #F7F9FC;
+}
+
+button,
+a {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+              background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+              transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), 
+              border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Text Reveal effect placeholder */
+.reveal-text {
+  overflow: hidden;
+  display: inline-block;
+}
+
+/* Grid helper */
+.grid-premium {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2rem;
+}
+
+/* Lenis Recommended */
+html.lenis, html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
+
+/* Infinite Marquee */
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 28s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Hide scrollbar universally for .no-scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Floramade Luxury Shimmer Effect - Ocean Navy & Pearl */
+@keyframes shimmerWave {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-luxury {
+  background: linear-gradient(
+    90deg,
+    #D9E5F3 0%,
+    #F7F9FC 50%,
+    #D9E5F3 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.8s infinite ease-in-out;
+}
+
+.shimmer-luxury-subtle {
+  background: linear-gradient(
+    90deg,
+    #E3ECF5 0%,
+    #F7F9FC 50%,
+    #E3ECF5 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 2s infinite ease-in-out;
+}
