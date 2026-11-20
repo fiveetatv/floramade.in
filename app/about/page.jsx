@@ -1,11 +1,11 @@
 import AboutContent from "./AboutContent";
 
 export const metadata = {
-  title: "About Suraj Gaur & Floramade | Authentic Ayurvedic Heritage",
-  description: "Learn about Floramade Healthcare, founded by Suraj Gaur in Delhi, India. Discover our mission of bringing pure, lab-tested classical Ayurvedic formulations for blood sugar, vitality, and digestive wellness.",
+  title: "About Floramade | Authentic Ayurvedic Heritage & Wellness",
+  description: "Learn about Floramade Healthcare based in Delhi, India. Discover our mission of bringing pure, lab-tested classical Ayurvedic formulations for blood sugar, vitality, and digestive wellness.",
   keywords: [
-    "Suraj Gaur",
-    "Suraj Gaur Floramade",
+    "Floramade",
+    "About Floramade",
     "Floramade founder",
     "Ayurvedic wellness Delhi",
     "Floramade Healthcare",
@@ -17,25 +17,25 @@ export const metadata = {
     canonical: "https://floramade.in/about",
   },
   openGraph: {
-    title: "About Suraj Gaur & Floramade | Authentic Ayurvedic Heritage",
-    description: "Learn about Floramade Healthcare, founded by Suraj Gaur in Delhi, India. Pure, lab-tested classical Ayurvedic formulations.",
+    title: "About Floramade | Authentic Ayurvedic Heritage & Wellness",
+    description: "Learn about Floramade Healthcare based in Delhi, India. Pure, lab-tested classical Ayurvedic formulations.",
     url: "https://floramade.in/about",
     siteName: "Floramade",
     locale: "en_IN",
-    type: "profile",
+    type: "website",
     images: [
       {
         url: "/assets/aboutus2.webp",
         width: 1200,
         height: 630,
-        alt: "Suraj Gaur - Floramade Ayurvedic Heritage",
+        alt: "Floramade Ayurvedic Heritage",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "About Suraj Gaur & Floramade",
-    description: "Learn about Floramade Healthcare, founded by Suraj Gaur in Delhi, India.",
+    title: "About Floramade | Authentic Ayurvedic Heritage",
+    description: "Learn about Floramade Healthcare based in Delhi, India.",
     images: ["/assets/aboutus2.webp"],
   },
 };
@@ -45,8 +45,8 @@ const aboutSchema = {
   "@type": "AboutPage",
   "@id": "https://floramade.in/about#webpage",
   "url": "https://floramade.in/about",
-  "name": "About Floramade & Founder Suraj Gaur",
-  "description": "Floramade is an authentic Ayurvedic wellness brand founded by Suraj Gaur in Delhi, India, bringing pure, lab-tested herbal remedies to modern living.",
+  "name": "About Floramade Healthcare",
+  "description": "Floramade is an authentic Ayurvedic wellness brand based in Delhi, India, bringing pure, lab-tested herbal remedies to modern living.",
   "isPartOf": {
     "@type": "WebSite",
     "@id": "https://floramade.in/#website",
@@ -54,17 +54,11 @@ const aboutSchema = {
     "url": "https://floramade.in"
   },
   "mainEntity": {
-    "@type": "Person",
-    "@id": "https://floramade.in/#founder",
-    "name": "Suraj Gaur",
-    "jobTitle": "Founder & Visionary",
-    "worksFor": {
-      "@type": "Organization",
-      "@id": "https://floramade.in/#organization",
-      "name": "Floramade Healthcare",
-      "url": "https://floramade.in"
-    },
-    "description": "Founder and Visionary of Floramade Healthcare, dedicated to classical Ayurvedic formulations and botanical standardization.",
+    "@type": "Organization",
+    "@id": "https://floramade.in/#organization",
+    "name": "Floramade Healthcare",
+    "url": "https://floramade.in",
+    "description": "Floramade Healthcare, dedicated to classical Ayurvedic formulations and botanical standardization based in Delhi, India.",
     "image": "https://floramade.in/assets/aboutus2.webp",
     "address": {
       "@type": "PostalAddress",
